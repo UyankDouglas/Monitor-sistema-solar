@@ -1,0 +1,15 @@
+# Normaliza quebras de linha: LF no repositório, nativo no checkout.
+* text=auto
+
+# Scripts e configs que DEVEM manter LF mesmo em checkout Windows
+# (executados dentro de containers Linux).
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binários
+*.png binary
+*.jpg binary
+*.ico binary
+*.jar binary
