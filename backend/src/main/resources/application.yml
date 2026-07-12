@@ -40,11 +40,18 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 
-# Configurações de domínio (bindadas em etapas futuras).
+# Configurações estáticas da aplicação. As dinâmicas (intervalo de leitura,
+# modo do provider, credenciais) vivem na tabela `configurations` e são
+# editáveis em runtime pela tela de Configurações.
 app:
   scheduler:
-    # Intervalo padrão de leitura do inversor (ms). Reconfigurável em runtime na Etapa 4.
-    reading-interval-ms: 5000
+    # Liga/desliga o agendador de ingestão (testes usam false). O INTERVALO
+    # vem do banco: configurations['scheduler.reading-interval-ms'].
+    enabled: true
+  solarman:
+    cloud:
+      # Host global da Solarman OpenAPI (não é segredo; credenciais ficam no banco).
+      base-url: https://globalapi.solarmanpv.com
   energy:
     default-currency: BRL
     default-kwh-price: 0.95

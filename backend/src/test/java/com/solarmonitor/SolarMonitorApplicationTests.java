@@ -11,10 +11,11 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * Teste de integração de fumaça: sobe um PostgreSQL/TimescaleDB real via
  * Testcontainers, aplica as migrations Flyway e valida que o contexto Spring
- * carrega. Serve de fundação para os testes de repositório da Etapa 3.
+ * carrega. Scheduler desligado para o teste ser determinístico — a ingestão
+ * tem sua própria suíte ({@code IngestionServiceIntegrationTest}).
  */
 @Testcontainers
-@SpringBootTest
+@SpringBootTest(properties = "app.scheduler.enabled=false")
 class SolarMonitorApplicationTests {
 
     @Container
