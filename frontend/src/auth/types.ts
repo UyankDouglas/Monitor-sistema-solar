@@ -5,6 +5,7 @@ export interface UserInfo {
   email: string
   roles: string[]
   mustChangePassword: boolean
+  enabled: boolean
 }
 
 export interface AuthResponse {

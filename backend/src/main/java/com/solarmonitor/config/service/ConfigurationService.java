@@ -1,7 +1,9 @@
 package com.solarmonitor.config.service;
 
+import com.solarmonitor.common.util.TimeZones;
 import com.solarmonitor.config.domain.ConfigScope;
 import com.solarmonitor.config.repository.ConfigurationRepository;
+import com.solarmonitor.plant.domain.Plant;
 import com.solarmonitor.provider.ProviderMode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.DateTimeException;
+import java.time.ZoneId;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -27,6 +31,10 @@ public class ConfigurationService {
 
     public static final String KEY_READING_INTERVAL_MS = "scheduler.reading-interval-ms";
     public static final String KEY_PROVIDER_MODE = "provider.mode";
+    public static final String KEY_KWH_PRICE = "energy.kwh-price";
+    public static final String KEY_CO2_FACTOR = "energy.co2-factor-kg-per-kwh";
+    public static final String KEY_CURRENCY = "energy.currency";
+    public static final String KEY_TIMEZONE = "app.timezone";
 
     private final ConfigurationRepository repository;
 
@@ -52,6 +60,37 @@ public class ConfigurationService {
     public long getReadingIntervalMs() {
         long interval = getLong(KEY_READING_INTERVAL_MS).orElse(5_000L);
         return Math.max(interval, 1_000L);
+    }
+
+    /**
+     * Parâmetros econômicos e de fuso: a CONFIGURAÇÃO (editável na tela)
+     * vence; a coluna da planta é o fallback de fábrica. Sem isto, a tela de
+     * Configurações ofereceria chaves que ninguém consome.
+     */
+    public BigDecimal getKwhPrice(Plant plant) {
+        return getDecimal(KEY_KWH_PRICE).orElse(plant.getKwhPrice());
+    }
+
+    public BigDecimal getCo2Factor(Plant plant) {
+        return getDecimal(KEY_CO2_FACTOR).orElse(plant.getCo2FactorKgPerKwh());
+    }
+
+    public String getCurrency(Plant plant) {
+        return getString(KEY_CURRENCY).orElse(plant.getCurrency());
+    }
+
+    public ZoneId getZone(Plant plant) {
+        return getString(KEY_TIMEZONE)
+                .map(tz -> {
+                    try {
+                        return ZoneId.of(tz);
+                    } catch (DateTimeException e) {
+                        log.warn("app.timezone inválido ('{}'); usando o fuso da planta", tz);
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .orElseGet(() -> TimeZones.of(plant));
     }
 
     /** Modo de coleta ativo; valores inválidos caem em SIMULATED com aviso. */

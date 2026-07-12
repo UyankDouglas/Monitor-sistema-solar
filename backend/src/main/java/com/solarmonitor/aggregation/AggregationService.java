@@ -1,6 +1,6 @@
 package com.solarmonitor.aggregation;
 
-import com.solarmonitor.common.util.TimeZones;
+import com.solarmonitor.config.service.ConfigurationService;
 import com.solarmonitor.energy.domain.DailyGeneration;
 import com.solarmonitor.energy.domain.MonthlyGeneration;
 import com.solarmonitor.energy.repository.DailyGenerationRepository;
@@ -44,6 +44,7 @@ public class AggregationService {
     private final DailyGenerationRepository dailyRepository;
     private final MonthlyGenerationRepository monthlyRepository;
     private final InverterRepository inverterRepository;
+    private final ConfigurationService configurations;
 
     /**
      * Consolida hoje + ontem e o mês corrente + anterior de um inversor.
@@ -57,7 +58,7 @@ public class AggregationService {
     @Transactional
     public void consolidateInverter(Long inverterId) {
         Inverter inverter = managed(inverterId);
-        ZoneId zone = TimeZones.of(inverter.getPlant());
+        ZoneId zone = configurations.getZone(inverter.getPlant());
         LocalDate today = LocalDate.now(zone);
 
         doConsolidateDay(inverter, today, zone);
@@ -110,8 +111,11 @@ public class AggregationService {
         BigDecimal energy = chooseEnergy(inverter.getId(), date, dailyCounter, integrated);
 
         Plant plant = inverter.getPlant();
-        BigDecimal savings = energy.multiply(plant.getKwhPrice()).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal co2 = energy.multiply(plant.getCo2FactorKgPerKwh()).setScale(3, RoundingMode.HALF_UP);
+        // Tarifa/fator vêm da CONFIGURAÇÃO (tela editável), planta é fallback.
+        BigDecimal savings = energy.multiply(configurations.getKwhPrice(plant))
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal co2 = energy.multiply(configurations.getCo2Factor(plant))
+                .setScale(3, RoundingMode.HALF_UP);
         BigDecimal selfConsumption = energy.subtract(exported).max(BigDecimal.ZERO);
         BigDecimal selfSufficiency = consumption.signum() > 0
                 ? selfConsumption.min(consumption)

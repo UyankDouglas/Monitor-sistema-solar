@@ -143,12 +143,13 @@ public class AuthController {
     }
 
     public record UserInfo(Long id, String username, String fullName, String email,
-                           List<String> roles, boolean mustChangePassword) {
+                           List<String> roles, boolean mustChangePassword, boolean enabled) {
         public static UserInfo of(User user) {
             return new UserInfo(user.getId(), user.getUsername(), user.getFullName(),
                     user.getEmail(),
                     user.getRoles().stream().map(Role::getName).map(Enum::name).sorted().toList(),
-                    user.isMustChangePassword());
+                    user.isMustChangePassword(),
+                    user.isEnabled());
         }
     }
 }

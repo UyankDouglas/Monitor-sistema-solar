@@ -1,10 +1,15 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { CssBaseline, ThemeProvider, createTheme, CircularProgress, Box } from '@mui/material'
+import { Box, CircularProgress, CssBaseline, ThemeProvider, createTheme } from '@mui/material'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
+import AppLayout from './layout/AppLayout'
 import LoginPage from './pages/LoginPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
-import HomePage from './pages/HomePage'
+import DashboardPage from './pages/DashboardPage'
+import HistoryPage from './pages/HistoryPage'
+import AlertsPage from './pages/AlertsPage'
+import SettingsPage from './pages/SettingsPage'
+import UsersPage from './pages/UsersPage'
 
 /**
  * Rota protegida: exige sessão; com troca de senha pendente, força a tela
@@ -20,7 +25,7 @@ function Protected({ children }: { children: ReactNode }) {
     )
   }
   if (!user) return <Navigate to="/login" replace />
-  if (user.mustChangePassword) return <Navigate to="/change-password" replace />
+  if (user.mustChangePassword) return <Navigate to="/trocar-senha" replace />
   return <>{children}</>
 }
 
@@ -31,9 +36,25 @@ function AuthenticatedOnly({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/** Páginas exclusivas de ADMIN — USER comum volta ao dashboard. */
+function AdminOnly({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
+  if (!user?.roles.includes('ADMIN')) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 export default function App() {
-  const [mode, setMode] = useState<'light' | 'dark'>('light')
+  const [mode, setMode] = useState<'light' | 'dark'>(() =>
+    (localStorage.getItem('solar.theme') as 'light' | 'dark' | null) ?? 'light')
   const theme = useMemo(() => createTheme({ palette: { mode } }), [mode])
+
+  function toggleMode() {
+    setMode(m => {
+      const next = m === 'light' ? 'dark' : 'light'
+      localStorage.setItem('solar.theme', next)
+      return next
+    })
+  }
 
   return (
     <ThemeProvider theme={theme}>
@@ -43,21 +64,30 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route
-              path="/change-password"
+              path="/trocar-senha"
               element={(
                 <AuthenticatedOnly>
                   <ChangePasswordPage />
                 </AuthenticatedOnly>
               )}
             />
+            {/* Compatibilidade com o caminho antigo */}
+            <Route path="/change-password" element={<Navigate to="/trocar-senha" replace />} />
+
             <Route
-              path="/"
               element={(
                 <Protected>
-                  <HomePage mode={mode} onToggleMode={() => setMode(m => (m === 'light' ? 'dark' : 'light'))} />
+                  <AppLayout mode={mode} onToggleMode={toggleMode} />
                 </Protected>
               )}
-            />
+            >
+              <Route path="/" element={<DashboardPage mode={mode} />} />
+              <Route path="/historico" element={<HistoryPage mode={mode} />} />
+              <Route path="/alertas" element={<AlertsPage />} />
+              <Route path="/configuracoes" element={<AdminOnly><SettingsPage /></AdminOnly>} />
+              <Route path="/usuarios" element={<AdminOnly><UsersPage /></AdminOnly>} />
+            </Route>
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

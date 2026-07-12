@@ -20,7 +20,7 @@ export default function LoginPage() {
     setSubmitting(true)
     try {
       const user = await login(username, password)
-      navigate(user.mustChangePassword ? '/change-password' : '/', { replace: true })
+      navigate(user.mustChangePassword ? '/trocar-senha' : '/', { replace: true })
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail ?? 'Não foi possível entrar. Verifique usuário e senha.')

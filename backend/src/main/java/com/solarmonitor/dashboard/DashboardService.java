@@ -1,11 +1,11 @@
 package com.solarmonitor.dashboard;
 
 import com.solarmonitor.alert.domain.AlertStatus;
-import com.solarmonitor.common.util.TimeZones;
 import com.solarmonitor.alert.repository.AlertRepository;
 import com.solarmonitor.energy.domain.EnergySample;
 import com.solarmonitor.energy.repository.DailyGenerationRepository;
 import com.solarmonitor.energy.repository.EnergySampleRepository;
+import com.solarmonitor.config.service.ConfigurationService;
 import com.solarmonitor.energy.repository.MonthlyGenerationRepository;
 import com.solarmonitor.plant.domain.Inverter;
 import com.solarmonitor.plant.domain.Plant;
@@ -39,6 +39,7 @@ public class DashboardService {
     private final MonthlyGenerationRepository monthlyRepository;
     private final AlertRepository alertRepository;
     private final InverterRepository inverterRepository;
+    private final ConfigurationService configurations;
 
     /**
      * Recebe o id (não a entidade): o inversor é recarregado gerenciado nesta
@@ -49,7 +50,7 @@ public class DashboardService {
         Inverter inverter = inverterRepository.findById(inverterId).orElseThrow(
                 () -> new EntityNotFoundException("Inversor " + inverterId + " não encontrado"));
         Plant plant = inverter.getPlant();
-        ZoneId zone = TimeZones.of(plant);
+        ZoneId zone = configurations.getZone(plant);
         LocalDate today = LocalDate.now(zone);
 
         EnergySample latest = energySampleRepository
@@ -71,13 +72,16 @@ public class DashboardService {
 
         BigDecimal totalEnergy = latest == null ? null : latest.getTotalEnergyKwh();
 
+        // Tarifa/fator/moeda: configuração (editável) vence, planta é fallback.
+        BigDecimal kwhPrice = configurations.getKwhPrice(plant);
         BigDecimal todaySavings = todayRow.map(d -> d.getSavings())
-                .orElseGet(() -> money(todayEnergy, plant.getKwhPrice()));
+                .orElseGet(() -> money(todayEnergy, kwhPrice));
         BigDecimal monthSavings = monthRow.map(m -> m.getSavings())
                 .orElse(todaySavings);
-        BigDecimal totalSavings = totalEnergy == null ? null : money(totalEnergy, plant.getKwhPrice());
+        BigDecimal totalSavings = totalEnergy == null ? null : money(totalEnergy, kwhPrice);
         BigDecimal totalCo2 = totalEnergy == null ? null
-                : totalEnergy.multiply(plant.getCo2FactorKgPerKwh()).setScale(1, RoundingMode.HALF_UP);
+                : totalEnergy.multiply(configurations.getCo2Factor(plant))
+                        .setScale(1, RoundingMode.HALF_UP);
 
         return new DashboardDto(
                 inverter.getId(),
@@ -101,7 +105,7 @@ public class DashboardService {
                 todayEnergy,
                 monthEnergy,
                 totalEnergy,
-                plant.getCurrency(),
+                configurations.getCurrency(plant),
                 todaySavings,
                 monthSavings,
                 totalSavings,

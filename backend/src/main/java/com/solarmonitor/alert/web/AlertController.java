@@ -32,7 +32,7 @@ public class AlertController {
     @Operation(summary = "Alertas paginados, mais recentes primeiro",
             description = "Filtro opcional por status (ACTIVE, ACKNOWLEDGED, RESOLVED).")
     @Transactional(readOnly = true)
-    public Page<AlertDto> list(
+    public PageResponse<AlertDto> list(
             @RequestParam(name = "status", required = false) AlertStatus status,
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "20") int size) {
@@ -44,11 +44,25 @@ public class AlertController {
                     alertRepository.findAllByStatusOrderByTriggeredAtDesc(status));
             int fromIdx = (int) Math.min(pageRequest.getOffset(), filtered.size());
             int toIdx = Math.min(fromIdx + size, filtered.size());
-            return new org.springframework.data.domain.PageImpl<>(
-                    filtered.subList(fromIdx, toIdx), pageRequest, filtered.size());
+            return new PageResponse<>(filtered.subList(fromIdx, toIdx), filtered.size(),
+                    (int) Math.ceil(filtered.size() / (double) size), page, size);
         }
-        return alertRepository.findAllByOrderByTriggeredAtDesc(pageRequest)
+        Page<AlertDto> result = alertRepository.findAllByOrderByTriggeredAtDesc(pageRequest)
                 .map(mapper::toDto);
+        return PageResponse.from(result);
+    }
+
+    /**
+     * Envelope de paginação próprio: serializar PageImpl direto emite aviso
+     * do Spring Data e o formato é declarado instável entre versões — este
+     * record congela o contrato consumido pelo frontend.
+     */
+    public record PageResponse<T>(List<T> content, long totalElements,
+                                  int totalPages, int number, int size) {
+        static <T> PageResponse<T> from(Page<T> page) {
+            return new PageResponse<>(page.getContent(), page.getTotalElements(),
+                    page.getTotalPages(), page.getNumber(), page.getSize());
+        }
     }
 
     @PostMapping("/{id}/acknowledge")
