@@ -1,5 +1,5 @@
 import {
-  AppBar, Box, Card, CardContent, Chip, Container, IconButton, Stack,
+  AppBar, Card, CardContent, Chip, Container, IconButton, Stack,
   Toolbar, Tooltip, Typography,
 } from '@mui/material'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
@@ -7,9 +7,10 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import LogoutIcon from '@mui/icons-material/Logout'
 import BoltIcon from '@mui/icons-material/Bolt'
 import { useQuery } from '@tanstack/react-query'
-import ReactECharts from 'echarts-for-react'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { useLiveReadings } from '../realtime/useLiveReadings'
+import LivePowerChart from '../components/LivePowerChart'
 
 interface Dashboard {
   inverterName: string
@@ -27,27 +28,38 @@ interface Props {
 }
 
 /**
- * Página inicial pós-login: resumo do dashboard (a tela completa com todos
- * os cards e gráficos em tempo real é a Etapa 10).
+ * Página inicial pós-login. Cards priorizam a leitura mais recente do
+ * WebSocket; o polling de 30 s do dashboard fica como fallback (e traz o
+ * que o WS não publica, como economia consolidada).
  */
 export default function HomePage({ mode, onToggleMode }: Props) {
   const { user, logout } = useAuth()
+  const { connected, latest } = useLiveReadings()
 
   const dashboard = useQuery<Dashboard>({
     queryKey: ['dashboard'],
     queryFn: async () => (await api.get<Dashboard>('/api/dashboard')).data,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   })
 
-  const chartOption = {
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: ['06h', '08h', '10h', '12h', '14h', '16h', '18h'] },
-    yAxis: { type: 'value', name: 'kW' },
-    series: [{ name: 'Potência', type: 'line', smooth: true, areaStyle: {}, data: [0.2, 2.1, 5.8, 8.9, 7.4, 3.6, 0.5] }],
-  }
-
   const d = dashboard.data
-  const online = d?.inverterStatus === 'ONLINE'
+
+  // Tempo real vence o snapshot, mas só se conectado E fresco (< 60 s):
+  // leitura obsoleta não pode mascarar o fallback de polling — ex.: card
+  // "kWh hoje" preso no valor de ontem após uma queda do WS na virada do
+  // dia. O re-render do polling de 30 s reavalia a idade.
+  const FRESH_MS = 60_000
+  const liveRaw = latest?.reading
+  const live = connected && liveRaw != null
+      && Date.now() - Date.parse(liveRaw.sampledAt) < FRESH_MS
+    ? liveRaw
+    : undefined
+
+  const powerW = live?.acPowerW ?? d?.currentPowerW
+  const socPct = live?.batterySocPct ?? d?.batterySocPct
+  const todayKwh = live?.dailyEnergyKwh ?? d?.todayEnergyKwh
+  const status = live?.status ?? d?.inverterStatus
+  const online = status === 'ONLINE'
 
   return (
     <>
@@ -80,29 +92,22 @@ export default function HomePage({ mode, onToggleMode }: Props) {
               </Typography>
               <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
                 <Chip
-                  label={online ? 'ONLINE' : d?.inverterStatus ?? 'Carregando…'}
+                  label={status ?? 'Carregando…'}
                   color={online ? 'success' : 'default'}
                 />
-                {d && (
-                  <>
-                    <Typography variant="body2">⚡ {d.currentPowerW ?? '—'} W agora</Typography>
-                    <Typography variant="body2">🔋 SOC {d.batterySocPct ?? '—'}%</Typography>
-                    <Typography variant="body2">☀️ {d.todayEnergyKwh ?? '—'} kWh hoje</Typography>
-                    <Typography variant="body2">
-                      💰 {d.todaySavings != null ? `${d.currency} ${d.todaySavings}` : '—'} hoje
-                    </Typography>
-                  </>
-                )}
+                <Typography variant="body2">⚡ {powerW ?? '—'} W agora</Typography>
+                <Typography variant="body2">🔋 SOC {socPct ?? '—'}%</Typography>
+                <Typography variant="body2">☀️ {todayKwh ?? '—'} kWh hoje</Typography>
+                <Typography variant="body2">
+                  💰 {d?.todaySavings != null ? `${d.currency} ${d.todaySavings}` : '—'} hoje
+                </Typography>
               </Stack>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>Geração (amostra)</Typography>
-              <Box sx={{ height: 320 }}>
-                <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} />
-              </Box>
+              <LivePowerChart connected={connected} latest={latest} mode={mode} />
             </CardContent>
           </Card>
         </Stack>

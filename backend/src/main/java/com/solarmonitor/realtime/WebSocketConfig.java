@@ -2,11 +2,13 @@ package com.solarmonitor.realtime;
 
 import com.solarmonitor.security.jwt.JwtService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -40,8 +42,23 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/topic");
+        // Heartbeat 10s/10s: sem ele o SimpleBroker anuncia 0,0, a negociação
+        // STOMP desliga os pings e uma conexão TCP semiaberta (suspend do
+        // notebook, troca de Wi-Fi) nunca dispararia onWebSocketClose no
+        // cliente — o chip ficaria "AO VIVO" congelado para sempre.
+        registry.enableSimpleBroker("/topic")
+                .setHeartbeatValue(new long[]{10_000, 10_000})
+                .setTaskScheduler(brokerHeartbeatScheduler());
         registry.setApplicationDestinationPrefixes("/app");
+    }
+
+    /** Obrigatório quando heartbeat > 0 — o Spring recusa boot sem scheduler. */
+    @Bean
+    public ThreadPoolTaskScheduler brokerHeartbeatScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("ws-heartbeat-");
+        return scheduler;
     }
 
     /** Recusa o upgrade (401) sem um access token válido no query string. */
