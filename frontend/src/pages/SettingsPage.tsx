@@ -48,6 +48,16 @@ const GROUPS: Array<{ title: string; hint?: string; keys: Array<{ key: string; l
       { key: 'provider.local.logger-serial', label: 'Serial do logger (numérico)' },
     ],
   },
+  {
+    title: 'Clima',
+    hint: 'Coordenadas da usina para a previsão (Open-Meteo, sem chave de API). '
+      + 'Ex.: latitude -23.5505, longitude -46.6333.',
+    keys: [
+      { key: 'weather.enabled', label: 'Habilitado (true/false)' },
+      { key: 'weather.latitude', label: 'Latitude' },
+      { key: 'weather.longitude', label: 'Longitude' },
+    ],
+  },
 ]
 
 export default function SettingsPage() {

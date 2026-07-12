@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { CurrentEnergy, DailyGeneration, Dashboard, MonthlyGeneration } from '../api/types'
 import { fmtDateTime, fmtKg, fmtKwh, fmtMoney, fmtPct, fmtW, toIsoDate } from '../lib/format'
-import { useLiveReadings } from '../realtime/useLiveReadings'
+import { useRealtime } from '../realtime/RealtimeContext'
 import LivePowerChart from '../components/LivePowerChart'
 import StatCard from '../components/StatCard'
 import EnergyFlowCard from '../components/EnergyFlowCard'
@@ -25,7 +25,7 @@ interface Props {
 }
 
 export default function DashboardPage({ mode }: Props) {
-  const { connected, latest } = useLiveReadings()
+  const { connected, latest } = useRealtime()
 
   const dashboard = useQuery<Dashboard>({
     queryKey: ['dashboard'],

@@ -39,6 +39,22 @@ public class IngestionService {
     private final RealtimePublisher realtimePublisher;
 
     private final Map<Long, AtomicInteger> consecutiveFailures = new ConcurrentHashMap<>();
+    private final java.util.Set<Long> succeededSinceStartup = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Falhas consecutivas de coleta — insumo do alerta COMMUNICATION_LOSS. */
+    public int consecutiveFailures(Long inverterId) {
+        AtomicInteger counter = consecutiveFailures.get(inverterId);
+        return counter == null ? 0 : counter.get();
+    }
+
+    /**
+     * Evidência POSITIVA de coleta bem-sucedida desde o start do processo.
+     * Distingue "contador zerado porque voltou a funcionar" de "contador
+     * zerado porque o backend reiniciou durante a indisponibilidade".
+     */
+    public boolean hasSucceededSinceStartup(Long inverterId) {
+        return succeededSinceStartup.contains(inverterId);
+    }
 
     /** Um ciclo completo sobre todos os inversores cadastrados. */
     public void ingestAll() {
@@ -64,6 +80,7 @@ public class IngestionService {
         EnergyReading reading = provider.read(inverter);
         persister.persist(reading, inverter.getId());
         consecutiveFailures.remove(inverter.getId());
+        succeededSinceStartup.add(inverter.getId());
         realtimePublisher.publishReading(inverter.getId(), reading);
 
         if (log.isDebugEnabled()) {

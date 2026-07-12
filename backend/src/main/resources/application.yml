@@ -59,6 +59,9 @@ app:
     cloud:
       # Host global da Solarman OpenAPI (não é segredo; credenciais ficam no banco).
       base-url: https://globalapi.solarmanpv.com
+  weather:
+    # Open-Meteo: previsão gratuita sem chave de API.
+    base-url: https://api.open-meteo.com
   energy:
     default-currency: BRL
     default-kwh-price: 0.95

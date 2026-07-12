@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,6 +23,10 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
      */
     Optional<Alert> findFirstByInverter_IdAndTypeAndStatusOrderByTriggeredAtDesc(
             Long inverterId, AlertType type, AlertStatus status);
+
+    /** Abertos = ACTIVE ou ACKNOWLEDGED (reconhecido não pode redisparar). */
+    List<Alert> findAllByInverter_IdAndTypeAndStatusIn(
+            Long inverterId, AlertType type, Collection<AlertStatus> statuses);
 
     long countByStatus(AlertStatus status);
 }

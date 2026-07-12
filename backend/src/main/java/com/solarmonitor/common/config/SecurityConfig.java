@@ -46,6 +46,8 @@ public class SecurityConfig {
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/settings/**").hasRole("ADMIN")
                         .requestMatchers("/api/users/**").hasRole("ADMIN")
+                        // Refresh manual chama API externa — só ADMIN (cota Open-Meteo).
+                        .requestMatchers(HttpMethod.POST, "/api/weather/refresh").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 // Sem isto, anônimo receberia 403 (Http403ForbiddenEntryPoint
                 // default) — o correto para "não autenticado" é 401.

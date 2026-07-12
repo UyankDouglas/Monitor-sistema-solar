@@ -2,11 +2,13 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Box, CircularProgress, CssBaseline, ThemeProvider, createTheme } from '@mui/material'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
+import { RealtimeProvider } from './realtime/RealtimeContext'
 import AppLayout from './layout/AppLayout'
 import LoginPage from './pages/LoginPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import DashboardPage from './pages/DashboardPage'
 import HistoryPage from './pages/HistoryPage'
+import WeatherPage from './pages/WeatherPage'
 import AlertsPage from './pages/AlertsPage'
 import SettingsPage from './pages/SettingsPage'
 import UsersPage from './pages/UsersPage'
@@ -77,12 +79,15 @@ export default function App() {
             <Route
               element={(
                 <Protected>
-                  <AppLayout mode={mode} onToggleMode={toggleMode} />
+                  <RealtimeProvider>
+                    <AppLayout mode={mode} onToggleMode={toggleMode} />
+                  </RealtimeProvider>
                 </Protected>
               )}
             >
               <Route path="/" element={<DashboardPage mode={mode} />} />
               <Route path="/historico" element={<HistoryPage mode={mode} />} />
+              <Route path="/clima" element={<WeatherPage mode={mode} />} />
               <Route path="/alertas" element={<AlertsPage />} />
               <Route path="/configuracoes" element={<AdminOnly><SettingsPage /></AdminOnly>} />
               <Route path="/usuarios" element={<AdminOnly><UsersPage /></AdminOnly>} />
