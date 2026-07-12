@@ -47,4 +47,51 @@ public interface EnergySampleRepository extends JpaRepository<EnergySample, Ener
                                          @Param("from") Instant from,
                                          @Param("to") Instant to,
                                          @Param("bucketSeconds") int bucketSeconds);
+
+    /**
+     * Resumo de um período para consolidação diária: integração
+     * tempo-ponderada das potências (kWh), pico de geração com horário,
+     * contador diário do inversor e nº de amostras.
+     *
+     * <p>O intervalo entre amostras consecutivas é limitado a 60 s
+     * ({@code least(dt, 60)}): se o sistema ficou fora do ar, o buraco não é
+     * extrapolado como se a última potência tivesse se mantido.</p>
+     *
+     * <p>O contador diário vem da ÚLTIMA amostra não nula do dia — nunca do
+     * {@code max()}: logo após a meia-noite o polling ainda pode entregar o
+     * contador final de ontem carimbado com timestamp de hoje, e um max()
+     * congelaria esse valor stale como a geração do dia inteiro.</p>
+     *
+     * <p>Retorno (1 linha): [consumption_kwh, export_kwh, import_kwh,
+     * generation_integrated_kwh, peak_power_w, peak_at, min_gen_power_w,
+     * daily_counter_kwh, sample_count]</p>
+     */
+    @Query(value = """
+            with s as (
+                select sampled_at, ac_power_w, load_power_w, export_power_w, import_power_w,
+                       daily_energy_kwh,
+                       least(coalesce(extract(epoch from
+                             (lead(sampled_at) over (order by sampled_at) - sampled_at)), 0), 60) as dt
+                from energy_sample
+                where inverter_id = :inverterId
+                  and sampled_at >= :from and sampled_at < :to
+            )
+            select coalesce(sum(load_power_w   * dt), 0) / 3600000.0  as consumption_kwh,
+                   coalesce(sum(export_power_w * dt), 0) / 3600000.0  as export_kwh,
+                   coalesce(sum(import_power_w * dt), 0) / 3600000.0  as import_kwh,
+                   coalesce(sum(ac_power_w     * dt), 0) / 3600000.0  as generation_integrated_kwh,
+                   max(ac_power_w)                                    as peak_power_w,
+                   (select s2.sampled_at from s s2
+                    where s2.ac_power_w is not null
+                    order by s2.ac_power_w desc, s2.sampled_at asc limit 1) as peak_at,
+                   min(ac_power_w) filter (where ac_power_w > 0)      as min_gen_power_w,
+                   (select s3.daily_energy_kwh from s s3
+                    where s3.daily_energy_kwh is not null
+                    order by s3.sampled_at desc limit 1)              as daily_counter_kwh,
+                   count(*)                                           as sample_count
+            from s
+            """, nativeQuery = true)
+    List<Object[]> daySummary(@Param("inverterId") Long inverterId,
+                              @Param("from") Instant from,
+                              @Param("to") Instant to);
 }
