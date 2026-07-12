@@ -44,6 +44,13 @@ springdoc:
 # modo do provider, credenciais) vivem na tabela `configurations` e são
 # editáveis em runtime pela tela de Configurações.
 app:
+  security:
+    jwt:
+      # HS256 exige >= 32 bytes. Em produção defina JWT_SECRET no ambiente
+      # (docker-compose já injeta); o default só serve para dev local.
+      secret: ${JWT_SECRET:dev-secret-inseguro-trocar-em-producao-0123456789abcdef}
+      access-ttl-minutes: 15
+      refresh-ttl-days: 30
   scheduler:
     # Liga/desliga o agendador de ingestão (testes usam false). O INTERVALO
     # vem do banco: configurations['scheduler.reading-interval-ms'].

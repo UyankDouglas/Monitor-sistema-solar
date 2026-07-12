@@ -52,6 +52,11 @@ public class User extends AuditableEntity {
     @Builder.Default
     private boolean enabled = true;
 
+    /** Força a troca no primeiro acesso (admin seed nasce com true — V10). */
+    @Column(name = "must_change_password", nullable = false)
+    @Builder.Default
+    private boolean mustChangePassword = false;
+
     @Column(name = "locale", nullable = false, length = 10)
     @Builder.Default
     private String locale = "pt-BR";

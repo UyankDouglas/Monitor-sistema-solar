@@ -1,5 +1,6 @@
 package com.solarmonitor.web;
 
+import com.jayway.jsonpath.JsonPath;
 import com.solarmonitor.aggregation.AggregationService;
 import com.solarmonitor.energy.domain.DailyGeneration;
 import com.solarmonitor.energy.repository.DailyGenerationRepository;
@@ -14,6 +15,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -28,14 +31,15 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Fumaça da API completa da Etapa 5: ingere via provider simulado, consolida
- * e exercita cada endpoint pelo MockMvc, validando status e campos-chave.
+ * Fumaça da API completa (Etapa 5) sob autenticação (Etapa 6): o seed troca
+ * a senha de fábrica do admin e todos os requests levam o bearer.
  */
 @Testcontainers
 @SpringBootTest(properties = "app.scheduler.enabled=false")
@@ -47,6 +51,8 @@ class ApiIntegrationTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
             DockerImageName.parse("timescale/timescaledb:2.17.2-pg16")
                     .asCompatibleSubstituteFor("postgres"));
+
+    private static final String ADMIN_PASSWORD = "SenhaDoAdmin#2026";
 
     @Autowired
     private MockMvc mockMvc;
@@ -67,12 +73,44 @@ class ApiIntegrationTest {
     private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private static boolean seeded = false;
+    private static String accessToken;
 
     @BeforeEach
-    void seedOnce() {
+    void seedOnce() throws Exception {
         if (seeded) {
             return;
         }
+        // Autenticação idempotente: se uma retentativa de seed rodar após a
+        // senha já ter sido trocada, o login de fábrica falha (401) e caímos
+        // no login com a senha definitiva — sem depender de flags parciais.
+        MvcResult factoryLogin = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"admin","password":"admin123"}"""))
+                .andReturn();
+        if (factoryLogin.getResponse().getStatus() == 200) {
+            String factoryToken = JsonPath.read(
+                    factoryLogin.getResponse().getContentAsString(), "$.accessToken");
+            MvcResult changed = mockMvc.perform(post("/api/auth/change-password")
+                            .header("Authorization", "Bearer " + factoryToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"currentPassword":"admin123","newPassword":"%s"}"""
+                                    .formatted(ADMIN_PASSWORD)))
+                    .andExpect(status().isOk())
+                    .andReturn();
+            accessToken = JsonPath.read(changed.getResponse().getContentAsString(), "$.accessToken");
+        } else {
+            MvcResult relogin = mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"username":"admin","password":"%s"}""".formatted(ADMIN_PASSWORD)))
+                    .andExpect(status().isOk())
+                    .andReturn();
+            accessToken = JsonPath.read(relogin.getResponse().getContentAsString(), "$.accessToken");
+        }
+
+        // Dados: ingestão simulada + consolidação
         ingestionService.ingestAll();
         ingestionService.ingestAll();
         Inverter inverter = inverterRepository.findAll().get(0);
@@ -85,7 +123,7 @@ class ApiIntegrationTest {
             Inverter managed = inverterRepository.findById(inverter.getId()).orElseThrow();
             dailyGenerationRepository.save(DailyGeneration.builder()
                     .inverter(managed)
-                    .generationDate(java.time.LocalDate.now(ZoneId.of("America/Sao_Paulo")).minusDays(2))
+                    .generationDate(LocalDate.now(ZoneId.of("America/Sao_Paulo")).minusDays(2))
                     .energyKwh(new java.math.BigDecimal("42.000"))
                     .peakPowerW(8000)
                     .savings(new java.math.BigDecimal("39.90"))
@@ -98,9 +136,14 @@ class ApiIntegrationTest {
         seeded = true;
     }
 
+    /** Builder já autenticado como admin. */
+    private MockHttpServletRequestBuilder authed(MockHttpServletRequestBuilder builder) {
+        return builder.header("Authorization", "Bearer " + accessToken);
+    }
+
     @Test
     void dashboardReturnsAllCards() throws Exception {
-        mockMvc.perform(get("/api/dashboard"))
+        mockMvc.perform(authed(get("/api/dashboard")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.inverterName").value("Deye SUN-10K-SG04LP3"))
                 .andExpect(jsonPath("$.inverterStatus").value("ONLINE"))
@@ -114,7 +157,7 @@ class ApiIntegrationTest {
     @Test
     void historyReturnsRawSeriesForShortWindow() throws Exception {
         var now = java.time.Instant.now();
-        mockMvc.perform(get("/api/energy/history")
+        mockMvc.perform(authed(get("/api/energy/history"))
                         .param("from", now.minusSeconds(3600).toString())
                         .param("to", now.plusSeconds(60).toString()))
                 .andExpect(status().isOk())
@@ -129,24 +172,24 @@ class ApiIntegrationTest {
         String from = today.minusDays(1).toString();
         String to = today.toString();
 
-        mockMvc.perform(get("/api/energy/daily")
+        mockMvc.perform(authed(get("/api/energy/daily"))
                         .param("from", from).param("to", to))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].energyKwh", notNullValue()))
                 .andExpect(jsonPath("$[0].savings", notNullValue()));
 
-        mockMvc.perform(get("/api/energy/daily/export")
+        mockMvc.perform(authed(get("/api/energy/daily/export"))
                         .param("from", from).param("to", to).param("format", "csv"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", containsString(".csv")))
                 .andExpect(csvHeaderPresent());
 
-        mockMvc.perform(get("/api/energy/daily/export")
+        mockMvc.perform(authed(get("/api/energy/daily/export"))
                         .param("from", from).param("to", to).param("format", "pdf"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "application/pdf"));
 
-        mockMvc.perform(get("/api/energy/daily/export")
+        mockMvc.perform(authed(get("/api/energy/daily/export"))
                         .param("from", from).param("to", to).param("format", "doc"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Requisição inválida"));
@@ -163,14 +206,14 @@ class ApiIntegrationTest {
 
     @Test
     void monthlyEndpointReturnsCurrentMonth() throws Exception {
-        mockMvc.perform(get("/api/energy/monthly"))
+        mockMvc.perform(authed(get("/api/energy/monthly")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].energyKwh", notNullValue()));
     }
 
     @Test
     void statisticsEndpointComputesTotals() throws Exception {
-        mockMvc.perform(get("/api/statistics"))
+        mockMvc.perform(authed(get("/api/statistics")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.daysWithData", greaterThan(0)))
                 .andExpect(jsonPath("$.totalEnergyKwh", notNullValue()))
@@ -179,12 +222,12 @@ class ApiIntegrationTest {
 
     @Test
     void invertersAndAlertsEndpointsWork() throws Exception {
-        mockMvc.perform(get("/api/inverters"))
+        mockMvc.perform(authed(get("/api/inverters")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].model").value("SUN-10K-SG04LP3"))
                 .andExpect(jsonPath("$[0].plantName").value("Minha Usina"));
 
-        mockMvc.perform(get("/api/alerts"))
+        mockMvc.perform(authed(get("/api/alerts")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
     }
@@ -192,23 +235,23 @@ class ApiIntegrationTest {
     @Test
     void settingsListMasksSecretsAndUpdateValidates() throws Exception {
         // Filtro JSONPath retorna array — matcher de item, não de escalar
-        mockMvc.perform(get("/api/settings"))
+        mockMvc.perform(authed(get("/api/settings")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.key=='provider.mode')].value", hasItem("SIMULATED")));
 
-        mockMvc.perform(put("/api/settings/scheduler.reading-interval-ms")
+        mockMvc.perform(authed(put("/api/settings/scheduler.reading-interval-ms"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"value\":\"8000\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.value").value("8000"));
 
-        mockMvc.perform(put("/api/settings/scheduler.reading-interval-ms")
+        mockMvc.perform(authed(put("/api/settings/scheduler.reading-interval-ms"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"value\":\"200\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Requisição inválida"));
 
-        mockMvc.perform(put("/api/settings/chave.inexistente")
+        mockMvc.perform(authed(put("/api/settings/chave.inexistente"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"value\":\"x\"}"))
                 .andExpect(status().isNotFound());
